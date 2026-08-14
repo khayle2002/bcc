@@ -89,11 +89,8 @@ const agents = [
   "Cypher",
   "Deadlock",
   "Killjoy",
-  "KJ",
   "Sage",
-  "Brim",
   "Vyse",
-  "KAYO",
   "Veto"
 ];
 
@@ -103,7 +100,6 @@ function normalizeAgent(agent) {
     .toLowerCase();
 }
 
-// Remove duplicate agents for dropdowns
 const uniqueAgents = [
   ...new Map(
     agents.map(agent => [
@@ -278,7 +274,7 @@ function calculateRankBoost(current, target) {
 }
 
 // =====================================================
-// CALCULATOR SESSION STORAGE
+// SESSION STORAGE
 // =====================================================
 
 const calculatorSessions = new Map();
@@ -357,7 +353,7 @@ function calculatorPanelComponents() {
 }
 
 // =====================================================
-// RANK SELECT
+// RANK MENUS
 // =====================================================
 
 function currentRankMenu(session) {
@@ -405,7 +401,7 @@ function targetRankMenu(session) {
 }
 
 // =====================================================
-// SERVICE SELECT
+// SERVICE MENU
 // =====================================================
 
 function serviceMenu(session) {
@@ -512,6 +508,7 @@ function getAgentPages() {
 
 function agentMenu(session) {
   const pages = getAgentPages();
+
   const page =
     pages[session.agentPage] || pages[0];
 
@@ -572,7 +569,7 @@ function agentPageButtons(session) {
 }
 
 // =====================================================
-// CALCULATOR ACTION BUTTONS
+// ACTION BUTTONS
 // =====================================================
 
 function calculatorActions() {
@@ -592,7 +589,7 @@ function calculatorActions() {
 }
 
 // =====================================================
-// CALCULATOR WIZARD
+// WIZARD EMBED
 // =====================================================
 
 function calculatorWizardEmbed(session) {
@@ -635,13 +632,24 @@ function calculatorWizardEmbed(session) {
     );
 }
 
+function calculatorComponents(session) {
+  return [
+    currentRankMenu(session),
+    targetRankMenu(session),
+    serviceMenu(session),
+    agentMenu(session),
+    agentPageButtons(session),
+    levelMenu(session),
+    calculatorActions()
+  ];
+}
+
 // =====================================================
 // SLASH COMMANDS
 // =====================================================
 
 const commands = [
 
-  // /calc
   new SlashCommandBuilder()
     .setName("calc")
     .setDescription(
@@ -656,7 +664,6 @@ const commands = [
         .setRequired(true)
     ),
 
-  // /boost
   new SlashCommandBuilder()
     .setName("boost")
     .setDescription(
@@ -709,7 +716,6 @@ const commands = [
         .setMaxValue(100)
     ),
 
-  // /price
   new SlashCommandBuilder()
     .setName("price")
     .setDescription(
@@ -724,21 +730,18 @@ const commands = [
       )
     ),
 
-  // /prices
   new SlashCommandBuilder()
     .setName("prices")
     .setDescription(
       "Show the complete BARCODE price list."
     ),
 
-  // /fees
   new SlashCommandBuilder()
     .setName("fees")
     .setDescription(
       "Show current BARCODE add-on fees."
     ),
 
-  // /setprice
   new SlashCommandBuilder()
     .setName("setprice")
     .setDescription(
@@ -763,7 +766,6 @@ const commands = [
         .setMinValue(0)
     ),
 
-  // /setfee
   new SlashCommandBuilder()
     .setName("setfee")
     .setDescription(
@@ -804,7 +806,6 @@ const commands = [
         .setMinValue(0)
     ),
 
-  // /setupcalculator
   new SlashCommandBuilder()
     .setName("setupcalculator")
     .setDescription(
@@ -814,7 +815,6 @@ const commands = [
       PermissionFlagsBits.ManageGuild.toString()
     ),
 
-  // /help
   new SlashCommandBuilder()
     .setName("help")
     .setDescription(
@@ -830,7 +830,6 @@ const commands = [
 // =====================================================
 
 async function registerCommands() {
-
   const rest = new REST({
     version: "10"
   }).setToken(
@@ -865,7 +864,6 @@ client.once(
     );
 
     try {
-
       await registerCommands();
 
     } catch (err) {
@@ -894,9 +892,11 @@ client.on(
       // BUTTONS
       // =================================================
 
-      if (
-        interaction.isButton()
-      ) {
+      if (interaction.isButton()) {
+
+        // IMPORTANT:
+        // Acknowledge immediately to prevent timeout.
+        await interaction.deferUpdate();
 
         // -----------------------------------------------
         // START CALCULATOR
@@ -912,9 +912,7 @@ client.on(
               interaction.user.id
             );
 
-          return interaction.reply({
-
-            ephemeral: true,
+          return interaction.editReply({
 
             embeds: [
               calculatorWizardEmbed(
@@ -922,15 +920,10 @@ client.on(
               )
             ],
 
-            components: [
-              currentRankMenu(session),
-              targetRankMenu(session),
-              serviceMenu(session),
-              agentMenu(session),
-              agentPageButtons(session),
-              levelMenu(session),
-              calculatorActions()
-            ]
+            components:
+              calculatorComponents(
+                session
+              )
 
           });
 
@@ -950,7 +943,7 @@ client.on(
               interaction.user.id
             );
 
-          return interaction.update({
+          return interaction.editReply({
 
             embeds: [
               calculatorWizardEmbed(
@@ -958,15 +951,10 @@ client.on(
               )
             ],
 
-            components: [
-              currentRankMenu(session),
-              targetRankMenu(session),
-              serviceMenu(session),
-              agentMenu(session),
-              agentPageButtons(session),
-              levelMenu(session),
-              calculatorActions()
-            ]
+            components:
+              calculatorComponents(
+                session
+              )
 
           });
 
@@ -992,7 +980,7 @@ client.on(
             session.agentPage--;
           }
 
-          return interaction.update({
+          return interaction.editReply({
 
             embeds: [
               calculatorWizardEmbed(
@@ -1000,15 +988,10 @@ client.on(
               )
             ],
 
-            components: [
-              currentRankMenu(session),
-              targetRankMenu(session),
-              serviceMenu(session),
-              agentMenu(session),
-              agentPageButtons(session),
-              levelMenu(session),
-              calculatorActions()
-            ]
+            components:
+              calculatorComponents(
+                session
+              )
 
           });
 
@@ -1038,7 +1021,7 @@ client.on(
             session.agentPage++;
           }
 
-          return interaction.update({
+          return interaction.editReply({
 
             embeds: [
               calculatorWizardEmbed(
@@ -1046,15 +1029,10 @@ client.on(
               )
             ],
 
-            components: [
-              currentRankMenu(session),
-              targetRankMenu(session),
-              serviceMenu(session),
-              agentMenu(session),
-              agentPageButtons(session),
-              levelMenu(session),
-              calculatorActions()
-            ]
+            components:
+              calculatorComponents(
+                session
+              )
 
           });
 
@@ -1074,11 +1052,9 @@ client.on(
               interaction.user.id
             );
 
-          if (
-            !session.current
-          ) {
+          if (!session.current) {
 
-            return interaction.reply({
+            return interaction.editReply({
 
               embeds: [
                 errorEmbed(
@@ -1086,17 +1062,15 @@ client.on(
                 )
               ],
 
-              ephemeral: true
+              components: []
 
             });
 
           }
 
-          if (
-            !session.target
-          ) {
+          if (!session.target) {
 
-            return interaction.reply({
+            return interaction.editReply({
 
               embeds: [
                 errorEmbed(
@@ -1104,7 +1078,7 @@ client.on(
                 )
               ],
 
-              ephemeral: true
+              components: []
 
             });
 
@@ -1122,7 +1096,7 @@ client.on(
 
           } catch (e) {
 
-            return interaction.reply({
+            return interaction.editReply({
 
               embeds: [
                 errorEmbed(
@@ -1130,7 +1104,7 @@ client.on(
                 )
               ],
 
-              ephemeral: true
+              components: []
 
             });
 
@@ -1144,7 +1118,7 @@ client.on(
             calculation.radiant
           ) {
 
-            return interaction.reply({
+            return interaction.editReply({
 
               embeds: [
                 resultEmbed(
@@ -1180,7 +1154,7 @@ client.on(
                 )
               ],
 
-              ephemeral: true
+              components: []
 
             });
 
@@ -1295,7 +1269,7 @@ client.on(
 
           }
 
-          return interaction.reply({
+          return interaction.editReply({
 
             embeds: [
               resultEmbed(
@@ -1375,7 +1349,7 @@ client.on(
               )
             ],
 
-            ephemeral: true
+            components: []
 
           });
 
@@ -1391,6 +1365,10 @@ client.on(
       if (
         interaction.isStringSelectMenu()
       ) {
+
+        // IMPORTANT:
+        // Acknowledge immediately.
+        await interaction.deferUpdate();
 
         const session =
           getSession(
@@ -1447,14 +1425,14 @@ client.on(
               "party"
             );
 
-          // If Level Boost wasn't selected,
-          // reset levels to 0.
           if (
             !selected.includes(
               "level"
             )
           ) {
+
             session.levels = 0;
+
           }
 
         }
@@ -1493,7 +1471,6 @@ client.on(
             interaction.values;
 
           // Remove agents from current page
-          // before adding the newly selected ones.
           session.agents =
             session.agents.filter(
               selected =>
@@ -1548,7 +1525,7 @@ client.on(
 
         }
 
-        return interaction.update({
+        return interaction.editReply({
 
           embeds: [
             calculatorWizardEmbed(
@@ -1556,15 +1533,10 @@ client.on(
             )
           ],
 
-          components: [
-            currentRankMenu(session),
-            targetRankMenu(session),
-            serviceMenu(session),
-            agentMenu(session),
-            agentPageButtons(session),
-            levelMenu(session),
-            calculatorActions()
-          ]
+          components:
+            calculatorComponents(
+              session
+            )
 
         });
 
@@ -1579,6 +1551,20 @@ client.on(
       ) {
         return;
       }
+
+      // =================================================
+      // IMPORTANT:
+      // Acknowledge slash command immediately.
+      // This prevents "didn't respond in time".
+      // =================================================
+
+      await interaction.deferReply({
+        ephemeral:
+          interaction.commandName !== "prices" &&
+          interaction.commandName !== "fees" &&
+          interaction.commandName !== "help" &&
+          interaction.commandName !== "calc"
+      });
 
       const config =
         loadConfig();
@@ -1603,13 +1589,12 @@ client.on(
           )
         ) {
 
-          return interaction.reply({
+          return interaction.editReply({
             embeds: [
               errorEmbed(
                 "Only numbers and +, -, *, /, %, and parentheses are allowed."
               )
-            ],
-            ephemeral: true
+            ]
           });
 
         }
@@ -1625,13 +1610,12 @@ client.on(
 
         } catch {
 
-          return interaction.reply({
+          return interaction.editReply({
             embeds: [
               errorEmbed(
                 "That expression could not be calculated."
               )
-            ],
-            ephemeral: true
+            ]
           });
 
         }
@@ -1640,18 +1624,17 @@ client.on(
           !Number.isFinite(result)
         ) {
 
-          return interaction.reply({
+          return interaction.editReply({
             embeds: [
               errorEmbed(
                 "The result is not a valid number."
               )
-            ],
-            ephemeral: true
+            ]
           });
 
         }
 
-        return interaction.reply({
+        return interaction.editReply({
 
           embeds: [
             resultEmbed(
@@ -1693,7 +1676,7 @@ client.on(
           rank === "radiant"
         ) {
 
-          return interaction.reply({
+          return interaction.editReply({
 
             embeds: [
               resultEmbed(
@@ -1717,7 +1700,7 @@ client.on(
 
         }
 
-        return interaction.reply({
+        return interaction.editReply({
 
           embeds: [
             resultEmbed(
@@ -1782,7 +1765,7 @@ client.on(
                 "Prices may vary. Send BARCODE a PM for a quote."
             });
 
-        return interaction.reply({
+        return interaction.editReply({
           embeds: [embed]
         });
 
@@ -1800,7 +1783,7 @@ client.on(
         const f =
           config.fees;
 
-        return interaction.reply({
+        return interaction.editReply({
 
           embeds: [
             resultEmbed(
@@ -1862,12 +1845,10 @@ client.on(
 
         });
 
-        return interaction.reply({
+        return interaction.editReply({
 
           content:
-            "✅ Calculator panel created in this channel.",
-
-          ephemeral: true
+            "✅ Calculator panel created in this channel."
 
         });
 
@@ -1924,27 +1905,27 @@ client.on(
 
         } catch (e) {
 
-          return interaction.reply({
+          return interaction.editReply({
 
             embeds: [
               errorEmbed(
                 e.message
               )
-            ],
-
-            ephemeral: true
+            ]
 
           });
 
         }
 
+        // -----------------------------------------------
         // RADIANT
+        // -----------------------------------------------
 
         if (
           calculation.radiant
         ) {
 
-          return interaction.reply({
+          return interaction.editReply({
 
             embeds: [
               resultEmbed(
@@ -1987,7 +1968,9 @@ client.on(
 
         const additions = [];
 
+        // -----------------------------------------------
         // AGENTS
+        // -----------------------------------------------
 
         let selectedAgents = [];
 
@@ -2035,7 +2018,7 @@ client.on(
             invalidAgents.length > 0
           ) {
 
-            return interaction.reply({
+            return interaction.editReply({
 
               embeds: [
                 errorEmbed(
@@ -2043,9 +2026,7 @@ client.on(
                     ", "
                   )}**\n\nPlease use valid Valorant agent names.`
                 )
-              ],
-
-              ephemeral: true
+              ]
 
             });
 
@@ -2068,7 +2049,9 @@ client.on(
 
         }
 
+        // -----------------------------------------------
         // LEVEL BOOST
+        // -----------------------------------------------
 
         if (
           levels > 0
@@ -2089,7 +2072,9 @@ client.on(
 
         }
 
+        // -----------------------------------------------
         // PARTY
+        // -----------------------------------------------
 
         if (
           party
@@ -2104,7 +2089,9 @@ client.on(
 
         }
 
+        // -----------------------------------------------
         // RUSH
+        // -----------------------------------------------
 
         if (
           rush
@@ -2133,7 +2120,7 @@ client.on(
             ? selectedAgents.join(", ")
             : "None";
 
-        return interaction.reply({
+        return interaction.editReply({
 
           embeds: [
 
@@ -2229,15 +2216,13 @@ client.on(
           rank === "radiant"
         ) {
 
-          return interaction.reply({
+          return interaction.editReply({
 
             embeds: [
               errorEmbed(
                 "Radiant is negotiable and does not use a fixed price."
               )
-            ],
-
-            ephemeral: true
+            ]
 
           });
 
@@ -2253,7 +2238,7 @@ client.on(
 
         saveConfig(config);
 
-        return interaction.reply({
+        return interaction.editReply({
 
           embeds: [
             resultEmbed(
@@ -2303,7 +2288,7 @@ client.on(
 
         saveConfig(config);
 
-        return interaction.reply({
+        return interaction.editReply({
 
           embeds: [
             resultEmbed(
@@ -2338,7 +2323,7 @@ client.on(
         "help"
       ) {
 
-        return interaction.reply({
+        return interaction.editReply({
 
           embeds: [
             resultEmbed(
@@ -2409,25 +2394,51 @@ client.on(
     } catch (err) {
 
       console.error(
+        "Interaction error:",
         err
       );
 
-      if (
-        !interaction.replied &&
-        !interaction.deferred
-      ) {
+      try {
 
-        await interaction.reply({
+        if (
+          interaction.deferred ||
+          interaction.replied
+        ) {
 
-          embeds: [
-            errorEmbed(
-              "Something went wrong while processing that command."
-            )
-          ],
+          await interaction.editReply({
 
-          ephemeral: true
+            embeds: [
+              errorEmbed(
+                "Something went wrong while processing that command."
+              )
+            ],
 
-        });
+            components: []
+
+          });
+
+        } else {
+
+          await interaction.reply({
+
+            embeds: [
+              errorEmbed(
+                "Something went wrong while processing that command."
+              )
+            ],
+
+            ephemeral: true
+
+          });
+
+        }
+
+      } catch (replyError) {
+
+        console.error(
+          "Could not send error response:",
+          replyError
+        );
 
       }
 
