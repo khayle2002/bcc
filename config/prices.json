@@ -1,0 +1,39 @@
+{
+  "currency": "\u20b1",
+  "ranks": {
+    "iron1": 40,
+    "iron2": 40,
+    "iron3": 40,
+    "bronze1": 50,
+    "bronze2": 50,
+    "bronze3": 55,
+    "silver1": 55,
+    "silver2": 60,
+    "silver3": 65,
+    "gold1": 80,
+    "gold2": 90,
+    "gold3": 100,
+    "platinum1": 120,
+    "platinum2": 130,
+    "platinum3": 140,
+    "diamond1": 160,
+    "diamond2": 180,
+    "diamond3": 200,
+    "ascendant1": 300,
+    "ascendant2": 350,
+    "ascendant3": 450,
+    "immortal1": 650,
+    "immortal2": 1000,
+    "immortal3": 1500
+  },
+  "fees": {
+    "rush_percent": 50,
+    "party_multiplier": 2.5,
+    "agent_request": 100,
+    "level_per_level": 150
+  },
+  "radiant": {
+    "negotiable": true,
+    "note": "Radiant price may vary. Contact BARCODE for a quote."
+  }
+}
