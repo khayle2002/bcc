@@ -77,12 +77,13 @@ const agents = [
   "Skye",
   "Sova",
   "Tejo",
-  "Chamber",
+  "Chamber,Cham",
   "Cypher",
   "Deadlock",
-  "Killjoy",
+  "Killjoy,KJ",
   "Sage",
   "Vyse",
+  "Brimstone,Brim",
   "Veto"
 ];
 
