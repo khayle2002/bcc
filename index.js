@@ -13,7 +13,7 @@ const {
 } = require("discord.js");
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-const configPath = path.join(__dirname, "..", "config", "prices.json");
+const configPath = path.join(__dirname, "config", "prices.json");
 
 function loadConfig() {
   return JSON.parse(fs.readFileSync(configPath, "utf8"));
