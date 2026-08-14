@@ -2,6 +2,7 @@ require("dotenv").config();
 
 const fs = require("fs");
 const path = require("path");
+
 const {
   Client,
   GatewayIntentBits,
@@ -9,22 +10,26 @@ const {
   Routes,
   SlashCommandBuilder,
   PermissionFlagsBits,
-  EmbedBuilder
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder
 } = require("discord.js");
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-// Folder structure:
-// index.js
-// config/
-//   prices.json
-const configPath = path.join(__dirname, "config", "prices.json");
+// =====================================================
+// FILE CONFIG
+// =====================================================
 
-// ===============================
-// CONFIG
-// ===============================
+const configPath = path.join(
+  __dirname,
+  "config",
+  "prices.json"
+);
 
 function loadConfig() {
   return JSON.parse(
@@ -42,15 +47,18 @@ function saveConfig(config) {
 function money(value) {
   const config = loadConfig();
 
-  return `${config.currency}${Number(value).toLocaleString("en-PH", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2
-  })}`;
+  return `${config.currency}${Number(value).toLocaleString(
+    "en-PH",
+    {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    }
+  )}`;
 }
 
-// ===============================
+// =====================================================
 // AGENTS
-// ===============================
+// =====================================================
 
 const AGENT_PRICE = 100;
 
@@ -95,9 +103,19 @@ function normalizeAgent(agent) {
     .toLowerCase();
 }
 
-// ===============================
+// Remove duplicate agents for dropdowns
+const uniqueAgents = [
+  ...new Map(
+    agents.map(agent => [
+      normalizeAgent(agent),
+      agent
+    ])
+  ).values()
+];
+
+// =====================================================
 // RANKS
-// ===============================
+// =====================================================
 
 const rankChoices = [
   ["Iron 1", "iron1"],
@@ -150,9 +168,17 @@ function addRankChoices(option) {
   return option;
 }
 
-// ===============================
+function rankName(value) {
+  const found = rankChoices.find(
+    x => x[1] === value
+  );
+
+  return found ? found[0] : value;
+}
+
+// =====================================================
 // EMBEDS
-// ===============================
+// =====================================================
 
 function errorEmbed(text) {
   return new EmbedBuilder()
@@ -178,9 +204,9 @@ function resultEmbed(title, fields) {
   return embed;
 }
 
-// ===============================
+// =====================================================
 // RANK CALCULATOR
-// ===============================
+// =====================================================
 
 function calculateRankBoost(current, target) {
   const config = loadConfig();
@@ -251,9 +277,367 @@ function calculateRankBoost(current, target) {
   };
 }
 
-// ===============================
+// =====================================================
+// CALCULATOR SESSION STORAGE
+// =====================================================
+
+const calculatorSessions = new Map();
+
+function getSession(userId) {
+  if (!calculatorSessions.has(userId)) {
+    calculatorSessions.set(userId, {
+      current: null,
+      target: null,
+      rush: false,
+      party: false,
+      agents: [],
+      levels: 0,
+      agentPage: 0
+    });
+  }
+
+  return calculatorSessions.get(userId);
+}
+
+function resetSession(userId) {
+  calculatorSessions.set(userId, {
+    current: null,
+    target: null,
+    rush: false,
+    party: false,
+    agents: [],
+    levels: 0,
+    agentPage: 0
+  });
+
+  return calculatorSessions.get(userId);
+}
+
+// =====================================================
+// CALCULATOR PANEL
+// =====================================================
+
+function calculatorPanelEmbed() {
+  return new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle("🧮 BARCODE BOOST CALCULATOR")
+    .setDescription(
+      [
+        "Want to know how much your Valorant boost will cost?",
+        "",
+        "Use our calculator to get an estimated price instantly.",
+        "",
+        "🎮 **Select your Current Rank**",
+        "🏆 **Select your Desired Rank**",
+        "⚡ **Choose Rush/Priority Boost**",
+        "🤝 **Choose Party Boost**",
+        "🎯 **Select your Agent Requests**",
+        "📈 **Choose Level Boost**",
+        "",
+        "💰 Your total will be calculated automatically.",
+        "",
+        "**Click the button below to start.**"
+      ].join("\n")
+    )
+    .setFooter({
+      text: "BARCODE Valorant Boosting Services"
+    });
+}
+
+function calculatorPanelComponents() {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("calculator_start")
+        .setLabel("Calculate Your Price")
+        .setEmoji("🧮")
+        .setStyle(ButtonStyle.Primary)
+    )
+  ];
+}
+
+// =====================================================
+// RANK SELECT
+// =====================================================
+
+function currentRankMenu(session) {
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId("calc_current_rank")
+      .setPlaceholder(
+        session.current
+          ? `Current: ${rankName(session.current)}`
+          : "Select your Current Rank"
+      )
+      .addOptions(
+        rankChoices.map(
+          ([name, value]) => ({
+            label: name,
+            value,
+            default:
+              session.current === value
+          })
+        )
+      )
+  );
+}
+
+function targetRankMenu(session) {
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId("calc_target_rank")
+      .setPlaceholder(
+        session.target
+          ? `Desired: ${rankName(session.target)}`
+          : "Select your Desired Rank"
+      )
+      .addOptions(
+        rankChoices.map(
+          ([name, value]) => ({
+            label: name,
+            value,
+            default:
+              session.target === value
+          })
+        )
+      )
+  );
+}
+
+// =====================================================
+// SERVICE SELECT
+// =====================================================
+
+function serviceMenu(session) {
+  const selected = [];
+
+  if (session.rush) {
+    selected.push("rush");
+  }
+
+  if (session.party) {
+    selected.push("party");
+  }
+
+  if (session.levels > 0) {
+    selected.push("level");
+  }
+
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId("calc_services")
+      .setPlaceholder(
+        selected.length
+          ? "Services selected"
+          : "Select Additional Services"
+      )
+      .setMinValues(0)
+      .setMaxValues(3)
+      .addOptions([
+        {
+          label: "Rush / Priority Boost",
+          description: "Adds the Rush percentage",
+          value: "rush",
+          emoji: "⚡",
+          default: session.rush
+        },
+        {
+          label: "Party Boost",
+          description: "Multiplies the total price",
+          value: "party",
+          emoji: "🤝",
+          default: session.party
+        },
+        {
+          label: "Level Boost",
+          description: "Add levels after selecting services",
+          value: "level",
+          emoji: "📈",
+          default: session.levels > 0
+        }
+      ])
+  );
+}
+
+// =====================================================
+// LEVEL MENU
+// =====================================================
+
+function levelMenu(session) {
+  const options = [];
+
+  for (let i = 0; i <= 20; i++) {
+    options.push({
+      label:
+        i === 0
+          ? "No Level Boost"
+          : `${i} Level${i > 1 ? "s" : ""}`,
+      value: String(i),
+      emoji: "📈",
+      default: session.levels === i
+    });
+  }
+
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId("calc_levels")
+      .setPlaceholder(
+        session.levels > 0
+          ? `Level Boost: ${session.levels}`
+          : "Select Level Boost"
+      )
+      .addOptions(options)
+  );
+}
+
+// =====================================================
+// AGENT MENU
+// =====================================================
+
+function getAgentPages() {
+  const pages = [];
+
+  for (
+    let i = 0;
+    i < uniqueAgents.length;
+    i += 25
+  ) {
+    pages.push(
+      uniqueAgents.slice(i, i + 25)
+    );
+  }
+
+  return pages;
+}
+
+function agentMenu(session) {
+  const pages = getAgentPages();
+  const page =
+    pages[session.agentPage] || pages[0];
+
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId("calc_agents")
+      .setPlaceholder(
+        session.agents.length > 0
+          ? `${session.agents.length} agent(s) selected`
+          : "Select Agent Request(s)"
+      )
+      .setMinValues(0)
+      .setMaxValues(page.length)
+      .addOptions(
+        page.map(agent => ({
+          label: agent,
+          value: normalizeAgent(agent),
+          emoji: "🎯",
+          default:
+            session.agents.some(
+              selected =>
+                normalizeAgent(selected) ===
+                normalizeAgent(agent)
+            )
+        }))
+      )
+  );
+}
+
+function agentPageButtons(session) {
+  const pages = getAgentPages();
+
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("calc_agent_previous")
+      .setLabel("Previous")
+      .setEmoji("⬅️")
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(session.agentPage === 0),
+
+    new ButtonBuilder()
+      .setCustomId("calc_agent_page")
+      .setLabel(
+        `Page ${session.agentPage + 1}/${pages.length}`
+      )
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(true),
+
+    new ButtonBuilder()
+      .setCustomId("calc_agent_next")
+      .setLabel("Next")
+      .setEmoji("➡️")
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(
+        session.agentPage >= pages.length - 1
+      )
+  );
+}
+
+// =====================================================
+// CALCULATOR ACTION BUTTONS
+// =====================================================
+
+function calculatorActions() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("calc_calculate")
+      .setLabel("Calculate Price")
+      .setEmoji("💰")
+      .setStyle(ButtonStyle.Success),
+
+    new ButtonBuilder()
+      .setCustomId("calc_reset")
+      .setLabel("Reset")
+      .setEmoji("🔄")
+      .setStyle(ButtonStyle.Danger)
+  );
+}
+
+// =====================================================
+// CALCULATOR WIZARD
+// =====================================================
+
+function calculatorWizardEmbed(session) {
+  return new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle("🧮 BARCODE PRICE CALCULATOR")
+    .setDescription(
+      [
+        "Select your options below.",
+        "",
+        `🎮 **Current Rank:** ${
+          session.current
+            ? rankName(session.current)
+            : "Not selected"
+        }`,
+        `🏆 **Desired Rank:** ${
+          session.target
+            ? rankName(session.target)
+            : "Not selected"
+        }`,
+        `🎯 **Agents:** ${
+          session.agents.length
+            ? session.agents.join(", ")
+            : "None"
+        }`,
+        `⚡ **Rush:** ${
+          session.rush ? "Yes" : "No"
+        }`,
+        `🤝 **Party:** ${
+          session.party ? "Yes" : "No"
+        }`,
+        `📈 **Level Boost:** ${
+          session.levels > 0
+            ? session.levels
+            : "None"
+        }`,
+        "",
+        "When finished, click **Calculate Price**."
+      ].join("\n")
+    );
+}
+
+// =====================================================
 // SLASH COMMANDS
-// ===============================
+// =====================================================
 
 const commands = [
 
@@ -278,29 +662,22 @@ const commands = [
     .setDescription(
       "Calculate a BARCODE Valorant boosting order."
     )
-
     .addStringOption(o =>
       addRankChoices(
         o
           .setName("current")
-          .setDescription(
-            "Current rank"
-          )
+          .setDescription("Current rank")
           .setRequired(true)
       )
     )
-
     .addStringOption(o =>
       addRankChoices(
         o
           .setName("target")
-          .setDescription(
-            "Target rank"
-          )
+          .setDescription("Target rank")
           .setRequired(true)
       )
     )
-
     .addBooleanOption(o =>
       o
         .setName("rush")
@@ -308,7 +685,6 @@ const commands = [
           "Rush/Priority Boost: +50%"
         )
     )
-
     .addBooleanOption(o =>
       o
         .setName("party")
@@ -316,7 +692,6 @@ const commands = [
           "Party Boost: x2.5"
         )
     )
-
     .addStringOption(o =>
       o
         .setName("agents")
@@ -324,7 +699,6 @@ const commands = [
           "Agents separated by commas. Example: Jett, Raze"
         )
     )
-
     .addIntegerOption(o =>
       o
         .setName("levels")
@@ -425,11 +799,19 @@ const commands = [
     .addNumberOption(o =>
       o
         .setName("amount")
-        .setDescription(
-          "New value"
-        )
+        .setDescription("New value")
         .setRequired(true)
         .setMinValue(0)
+    ),
+
+  // /setupcalculator
+  new SlashCommandBuilder()
+    .setName("setupcalculator")
+    .setDescription(
+      "Admin: create the calculator panel in this channel."
+    )
+    .setDefaultMemberPermissions(
+      PermissionFlagsBits.ManageGuild.toString()
     ),
 
   // /help
@@ -443,9 +825,9 @@ const commands = [
   c => c.toJSON()
 );
 
-// ===============================
+// =====================================================
 // REGISTER COMMANDS
-// ===============================
+// =====================================================
 
 async function registerCommands() {
 
@@ -470,9 +852,9 @@ async function registerCommands() {
   );
 }
 
-// ===============================
+// =====================================================
 // READY
-// ===============================
+// =====================================================
 
 client.once(
   "ready",
@@ -498,28 +880,712 @@ client.once(
   }
 );
 
-// ===============================
+// =====================================================
 // INTERACTIONS
-// ===============================
+// =====================================================
 
 client.on(
   "interactionCreate",
   async interaction => {
 
-    if (
-      !interaction.isChatInputCommand()
-    ) {
-      return;
-    }
-
     try {
+
+      // =================================================
+      // BUTTONS
+      // =================================================
+
+      if (
+        interaction.isButton()
+      ) {
+
+        // -----------------------------------------------
+        // START CALCULATOR
+        // -----------------------------------------------
+
+        if (
+          interaction.customId ===
+          "calculator_start"
+        ) {
+
+          const session =
+            resetSession(
+              interaction.user.id
+            );
+
+          return interaction.reply({
+
+            ephemeral: true,
+
+            embeds: [
+              calculatorWizardEmbed(
+                session
+              )
+            ],
+
+            components: [
+              currentRankMenu(session),
+              targetRankMenu(session),
+              serviceMenu(session),
+              agentMenu(session),
+              agentPageButtons(session),
+              levelMenu(session),
+              calculatorActions()
+            ]
+
+          });
+
+        }
+
+        // -----------------------------------------------
+        // RESET
+        // -----------------------------------------------
+
+        if (
+          interaction.customId ===
+          "calc_reset"
+        ) {
+
+          const session =
+            resetSession(
+              interaction.user.id
+            );
+
+          return interaction.update({
+
+            embeds: [
+              calculatorWizardEmbed(
+                session
+              )
+            ],
+
+            components: [
+              currentRankMenu(session),
+              targetRankMenu(session),
+              serviceMenu(session),
+              agentMenu(session),
+              agentPageButtons(session),
+              levelMenu(session),
+              calculatorActions()
+            ]
+
+          });
+
+        }
+
+        // -----------------------------------------------
+        // AGENT PREVIOUS
+        // -----------------------------------------------
+
+        if (
+          interaction.customId ===
+          "calc_agent_previous"
+        ) {
+
+          const session =
+            getSession(
+              interaction.user.id
+            );
+
+          if (
+            session.agentPage > 0
+          ) {
+            session.agentPage--;
+          }
+
+          return interaction.update({
+
+            embeds: [
+              calculatorWizardEmbed(
+                session
+              )
+            ],
+
+            components: [
+              currentRankMenu(session),
+              targetRankMenu(session),
+              serviceMenu(session),
+              agentMenu(session),
+              agentPageButtons(session),
+              levelMenu(session),
+              calculatorActions()
+            ]
+
+          });
+
+        }
+
+        // -----------------------------------------------
+        // AGENT NEXT
+        // -----------------------------------------------
+
+        if (
+          interaction.customId ===
+          "calc_agent_next"
+        ) {
+
+          const session =
+            getSession(
+              interaction.user.id
+            );
+
+          const pages =
+            getAgentPages();
+
+          if (
+            session.agentPage <
+            pages.length - 1
+          ) {
+            session.agentPage++;
+          }
+
+          return interaction.update({
+
+            embeds: [
+              calculatorWizardEmbed(
+                session
+              )
+            ],
+
+            components: [
+              currentRankMenu(session),
+              targetRankMenu(session),
+              serviceMenu(session),
+              agentMenu(session),
+              agentPageButtons(session),
+              levelMenu(session),
+              calculatorActions()
+            ]
+
+          });
+
+        }
+
+        // -----------------------------------------------
+        // CALCULATE
+        // -----------------------------------------------
+
+        if (
+          interaction.customId ===
+          "calc_calculate"
+        ) {
+
+          const session =
+            getSession(
+              interaction.user.id
+            );
+
+          if (
+            !session.current
+          ) {
+
+            return interaction.reply({
+
+              embeds: [
+                errorEmbed(
+                  "Please select your **Current Rank** first."
+                )
+              ],
+
+              ephemeral: true
+
+            });
+
+          }
+
+          if (
+            !session.target
+          ) {
+
+            return interaction.reply({
+
+              embeds: [
+                errorEmbed(
+                  "Please select your **Desired Rank** first."
+                )
+              ],
+
+              ephemeral: true
+
+            });
+
+          }
+
+          let calculation;
+
+          try {
+
+            calculation =
+              calculateRankBoost(
+                session.current,
+                session.target
+              );
+
+          } catch (e) {
+
+            return interaction.reply({
+
+              embeds: [
+                errorEmbed(
+                  e.message
+                )
+              ],
+
+              ephemeral: true
+
+            });
+
+          }
+
+          // ---------------------------------------------
+          // RADIANT
+          // ---------------------------------------------
+
+          if (
+            calculation.radiant
+          ) {
+
+            return interaction.reply({
+
+              embeds: [
+                resultEmbed(
+                  "⭐ Radiant Boost",
+                  [
+                    {
+                      name:
+                        "Current Rank",
+                      value:
+                        rankName(
+                          session.current
+                        )
+                    },
+                    {
+                      name:
+                        "Target Rank",
+                      value:
+                        "Radiant"
+                    },
+                    {
+                      name:
+                        "Price",
+                      value:
+                        "**Negotiable / Price may vary**"
+                    },
+                    {
+                      name:
+                        "Next Step",
+                      value:
+                        "Send BARCODE a PM for a custom quote."
+                    }
+                  ]
+                )
+              ],
+
+              ephemeral: true
+
+            });
+
+          }
+
+          // ---------------------------------------------
+          // BASE
+          // ---------------------------------------------
+
+          let subtotal =
+            calculation.total;
+
+          const additions = [];
+
+          // ---------------------------------------------
+          // AGENTS
+          // ---------------------------------------------
+
+          if (
+            session.agents.length > 0
+          ) {
+
+            const agentFee =
+              session.agents.length *
+              AGENT_PRICE;
+
+            subtotal +=
+              agentFee;
+
+            additions.push(
+              `🎯 Agent Request (${session.agents.join(
+                ", "
+              )}): +${money(
+                agentFee
+              )}`
+            );
+
+          }
+
+          // ---------------------------------------------
+          // LEVELS
+          // ---------------------------------------------
+
+          if (
+            session.levels > 0
+          ) {
+
+            const config =
+              loadConfig();
+
+            const levelFee =
+              session.levels *
+              config.fees.level_per_level;
+
+            subtotal +=
+              levelFee;
+
+            additions.push(
+              `📈 Level Boost (${session.levels}): +${money(
+                levelFee
+              )}`
+            );
+
+          }
+
+          // ---------------------------------------------
+          // PARTY
+          // ---------------------------------------------
+
+          if (
+            session.party
+          ) {
+
+            const config =
+              loadConfig();
+
+            subtotal *=
+              config.fees.party_multiplier;
+
+            additions.push(
+              `🤝 Party Boost: x${config.fees.party_multiplier}`
+            );
+
+          }
+
+          // ---------------------------------------------
+          // RUSH
+          // ---------------------------------------------
+
+          if (
+            session.rush
+          ) {
+
+            const config =
+              loadConfig();
+
+            const rushFee =
+              subtotal *
+              (
+                config.fees.rush_percent /
+                100
+              );
+
+            subtotal +=
+              rushFee;
+
+            additions.push(
+              `⚡ Rush/Priority: +${money(
+                rushFee
+              )}`
+            );
+
+          }
+
+          return interaction.reply({
+
+            embeds: [
+              resultEmbed(
+                "🎮 BARCODE BOOST CALCULATOR",
+                [
+
+                  {
+                    name:
+                      "Current Rank",
+                    value:
+                      rankName(
+                        session.current
+                      ),
+                    inline: true
+                  },
+
+                  {
+                    name:
+                      "Target Rank",
+                    value:
+                      rankName(
+                        session.target
+                      ),
+                    inline: true
+                  },
+
+                  {
+                    name:
+                      "Rank Progression",
+                    value:
+                      calculation.steps.join(
+                        "\n"
+                      )
+                  },
+
+                  {
+                    name:
+                      "Base Boost Price",
+                    value:
+                      money(
+                        calculation.total
+                      )
+                  },
+
+                  {
+                    name:
+                      "🎯 Agent Request",
+                    value:
+                      session.agents.length
+                        ? session.agents.join(
+                            ", "
+                          )
+                        : "None"
+                  },
+
+                  {
+                    name:
+                      "Add-ons",
+                    value:
+                      additions.length
+                        ? additions.join(
+                            "\n"
+                          )
+                        : "None"
+                  },
+
+                  {
+                    name:
+                      "💰 TOTAL",
+                    value:
+                      `# **${money(
+                        subtotal
+                      )}**`
+                  }
+
+                ]
+              )
+            ],
+
+            ephemeral: true
+
+          });
+
+        }
+
+        return;
+      }
+
+      // =================================================
+      // SELECT MENUS
+      // =================================================
+
+      if (
+        interaction.isStringSelectMenu()
+      ) {
+
+        const session =
+          getSession(
+            interaction.user.id
+          );
+
+        // -----------------------------------------------
+        // CURRENT RANK
+        // -----------------------------------------------
+
+        if (
+          interaction.customId ===
+          "calc_current_rank"
+        ) {
+
+          session.current =
+            interaction.values[0];
+
+        }
+
+        // -----------------------------------------------
+        // TARGET RANK
+        // -----------------------------------------------
+
+        else if (
+          interaction.customId ===
+          "calc_target_rank"
+        ) {
+
+          session.target =
+            interaction.values[0];
+
+        }
+
+        // -----------------------------------------------
+        // SERVICES
+        // -----------------------------------------------
+
+        else if (
+          interaction.customId ===
+          "calc_services"
+        ) {
+
+          const selected =
+            interaction.values;
+
+          session.rush =
+            selected.includes(
+              "rush"
+            );
+
+          session.party =
+            selected.includes(
+              "party"
+            );
+
+          // If Level Boost wasn't selected,
+          // reset levels to 0.
+          if (
+            !selected.includes(
+              "level"
+            )
+          ) {
+            session.levels = 0;
+          }
+
+        }
+
+        // -----------------------------------------------
+        // LEVELS
+        // -----------------------------------------------
+
+        else if (
+          interaction.customId ===
+          "calc_levels"
+        ) {
+
+          session.levels =
+            Number(
+              interaction.values[0]
+            );
+
+        }
+
+        // -----------------------------------------------
+        // AGENTS
+        // -----------------------------------------------
+
+        else if (
+          interaction.customId ===
+          "calc_agents"
+        ) {
+
+          const currentPage =
+            getAgentPages()[
+              session.agentPage
+            ] || [];
+
+          const selectedOnPage =
+            interaction.values;
+
+          // Remove agents from current page
+          // before adding the newly selected ones.
+          session.agents =
+            session.agents.filter(
+              selected =>
+                !currentPage.some(
+                  pageAgent =>
+                    normalizeAgent(
+                      pageAgent
+                    ) ===
+                    normalizeAgent(
+                      selected
+                    )
+                )
+            );
+
+          // Add selected agents
+          for (
+            const selectedValue
+            of selectedOnPage
+          ) {
+
+            const realAgent =
+              uniqueAgents.find(
+                agent =>
+                  normalizeAgent(
+                    agent
+                  ) ===
+                  normalizeAgent(
+                    selectedValue
+                  )
+              );
+
+            if (
+              realAgent &&
+              !session.agents.some(
+                existing =>
+                  normalizeAgent(
+                    existing
+                  ) ===
+                  normalizeAgent(
+                    realAgent
+                  )
+              )
+            ) {
+
+              session.agents.push(
+                realAgent
+              );
+
+            }
+
+          }
+
+        }
+
+        return interaction.update({
+
+          embeds: [
+            calculatorWizardEmbed(
+              session
+            )
+          ],
+
+          components: [
+            currentRankMenu(session),
+            targetRankMenu(session),
+            serviceMenu(session),
+            agentMenu(session),
+            agentPageButtons(session),
+            levelMenu(session),
+            calculatorActions()
+          ]
+
+        });
+
+      }
+
+      // =================================================
+      // SLASH COMMANDS
+      // =================================================
+
+      if (
+        !interaction.isChatInputCommand()
+      ) {
+        return;
+      }
 
       const config =
         loadConfig();
 
-      // ==========================
+      // =================================================
       // /CALC
-      // ==========================
+      // =================================================
 
       if (
         interaction.commandName ===
@@ -609,9 +1675,9 @@ client.on(
 
       }
 
-      // ==========================
+      // =================================================
       // /PRICE
-      // ==========================
+      // =================================================
 
       if (
         interaction.commandName ===
@@ -660,10 +1726,7 @@ client.on(
                 {
                   name: "Rank",
                   value:
-                    rankChoices.find(
-                      x =>
-                        x[1] === rank
-                    )[0],
+                    rankName(rank),
                   inline: true
                 },
                 {
@@ -682,9 +1745,9 @@ client.on(
 
       }
 
-      // ==========================
+      // =================================================
       // /PRICES
-      // ==========================
+      // =================================================
 
       if (
         interaction.commandName ===
@@ -725,9 +1788,9 @@ client.on(
 
       }
 
-      // ==========================
+      // =================================================
       // /FEES
-      // ==========================
+      // =================================================
 
       if (
         interaction.commandName ===
@@ -779,9 +1842,40 @@ client.on(
 
       }
 
-      // ==========================
+      // =================================================
+      // /SETUPCALCULATOR
+      // =================================================
+
+      if (
+        interaction.commandName ===
+        "setupcalculator"
+      ) {
+
+        await interaction.channel.send({
+
+          embeds: [
+            calculatorPanelEmbed()
+          ],
+
+          components:
+            calculatorPanelComponents()
+
+        });
+
+        return interaction.reply({
+
+          content:
+            "✅ Calculator panel created in this channel.",
+
+          ephemeral: true
+
+        });
+
+      }
+
+      // =================================================
       // /BOOST
-      // ==========================
+      // =================================================
 
       if (
         interaction.commandName ===
@@ -818,10 +1912,6 @@ client.on(
             "levels"
           ) ?? 0;
 
-        // --------------------------
-        // RANK CALCULATION
-        // --------------------------
-
         let calculation;
 
         try {
@@ -848,9 +1938,7 @@ client.on(
 
         }
 
-        // --------------------------
         // RADIANT
-        // --------------------------
 
         if (
           calculation.radiant
@@ -866,10 +1954,7 @@ client.on(
                     name:
                       "Current Rank",
                     value:
-                      rankChoices.find(
-                        x =>
-                          x[1] === current
-                      )[0]
+                      rankName(current)
                   },
                   {
                     name:
@@ -897,18 +1982,12 @@ client.on(
 
         }
 
-        // --------------------------
-        // BASE PRICE
-        // --------------------------
-
         let subtotal =
           calculation.total;
 
         const additions = [];
 
-        // --------------------------
-        // AGENT REQUEST
-        // --------------------------
+        // AGENTS
 
         let selectedAgents = [];
 
@@ -924,7 +2003,6 @@ client.on(
               )
               .filter(Boolean);
 
-          // Remove duplicates
           selectedAgents =
             [
               ...new Map(
@@ -939,7 +2017,6 @@ client.on(
               ).values()
             ];
 
-          // Find invalid agents
           const invalidAgents =
             selectedAgents.filter(
               input =>
@@ -974,7 +2051,6 @@ client.on(
 
           }
 
-          // ₱100 PER AGENT
           const agentFee =
             selectedAgents.length *
             AGENT_PRICE;
@@ -992,9 +2068,7 @@ client.on(
 
         }
 
-        // --------------------------
         // LEVEL BOOST
-        // --------------------------
 
         if (
           levels > 0
@@ -1002,8 +2076,7 @@ client.on(
 
           const levelFee =
             levels *
-            config.fees
-              .level_per_level;
+            config.fees.level_per_level;
 
           subtotal +=
             levelFee;
@@ -1016,17 +2089,14 @@ client.on(
 
         }
 
-        // --------------------------
-        // PARTY BOOST
-        // --------------------------
+        // PARTY
 
         if (
           party
         ) {
 
           subtotal *=
-            config.fees
-              .party_multiplier;
+            config.fees.party_multiplier;
 
           additions.push(
             `🤝 Party Boost: x${config.fees.party_multiplier}`
@@ -1034,9 +2104,7 @@ client.on(
 
         }
 
-        // --------------------------
         // RUSH
-        // --------------------------
 
         if (
           rush
@@ -1045,8 +2113,8 @@ client.on(
           const rushFee =
             subtotal *
             (
-              config.fees
-                .rush_percent / 100
+              config.fees.rush_percent /
+              100
             );
 
           subtotal +=
@@ -1060,20 +2128,10 @@ client.on(
 
         }
 
-        // --------------------------
-        // AGENT DISPLAY
-        // --------------------------
-
         const agentDisplay =
           selectedAgents.length > 0
-            ? selectedAgents.join(
-                ", "
-              )
+            ? selectedAgents.join(", ")
             : "None";
-
-        // --------------------------
-        // RESULT
-        // --------------------------
 
         return interaction.reply({
 
@@ -1087,10 +2145,7 @@ client.on(
                   name:
                     "Current Rank",
                   value:
-                    rankChoices.find(
-                      x =>
-                        x[1] === current
-                    )[0],
+                    rankName(current),
                   inline: true
                 },
 
@@ -1098,10 +2153,7 @@ client.on(
                   name:
                     "Target Rank",
                   value:
-                    rankChoices.find(
-                      x =>
-                        x[1] === target
-                    )[0],
+                    rankName(target),
                   inline: true
                 },
 
@@ -1159,9 +2211,9 @@ client.on(
 
       }
 
-      // ==========================
+      // =================================================
       // /SETPRICE
-      // ==========================
+      // =================================================
 
       if (
         interaction.commandName ===
@@ -1211,10 +2263,7 @@ client.on(
                   name:
                     "Rank",
                   value:
-                    rankChoices.find(
-                      x =>
-                        x[1] === rank
-                    )[0]
+                    rankName(rank)
                 },
                 {
                   name:
@@ -1230,9 +2279,9 @@ client.on(
 
       }
 
-      // ==========================
+      // =================================================
       // /SETFEE
-      // ==========================
+      // =================================================
 
       if (
         interaction.commandName ===
@@ -1280,9 +2329,9 @@ client.on(
 
       }
 
-      // ==========================
+      // =================================================
       // /HELP
-      // ==========================
+      // =================================================
 
       if (
         interaction.commandName ===
@@ -1309,9 +2358,15 @@ client.on(
                 },
                 {
                   name:
+                    "/setupcalculator",
+                  value:
+                    "Admin-only: create the calculator panel in the current channel."
+                },
+                {
+                  name:
                     "🎯 Agent Request",
                   value:
-                    "Enter agents separated by commas. Each agent costs ₱100."
+                    "Each selected agent costs ₱100."
                 },
                 {
                   name:
@@ -1381,9 +2436,9 @@ client.on(
   }
 );
 
-// ===============================
+// =====================================================
 // ENVIRONMENT VARIABLES
-// ===============================
+// =====================================================
 
 if (
   !process.env.DISCORD_TOKEN ||
@@ -1399,9 +2454,9 @@ if (
 
 }
 
-// ===============================
+// =====================================================
 // LOGIN
-// ===============================
+// =====================================================
 
 client.login(
   process.env.DISCORD_TOKEN
